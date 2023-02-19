@@ -1,5 +1,7 @@
 from __future__ import division
 import numpy as np
+from numba import njit
+import time
 import numbers
 from warnings import warn
 
@@ -242,26 +244,57 @@ class EMRegistration(object):
         """
         Perform one iteration of the EM algorithm.
         """
+        st = time.time()
         self.expectation()
+        et = time.time()
+        print(f"Expectation took {et - st} seconds.")
+        st = time.time()
         self.maximization()
+        et = time.time()
+        print(f"maximization took {et - st} seconds.")
+        st = time.time()
         self.iteration += 1
 
     def expectation(self):
         """
         Compute the expectation step of the EM algorithm.
         """
-        P = np.sum((self.X[None, :, :] - self.TY[:, None, :])**2, axis=2) # (M, N)
-        P = np.exp(-P/(2*self.sigma2))
-        c = (2*np.pi*self.sigma2)**(self.D/2)*self.w/(1. - self.w)*self.M/self.N
+        # P = np.sum((self.X[None, :, :] - self.TY[:, None, :])**2, axis=2) # (M, N)
+        # P = np.exp(-P/(2*self.sigma2))
+        # c = (2*np.pi*self.sigma2)**(self.D/2)*self.w/(1. - self.w)*self.M/self.N
 
-        den = np.sum(P, axis = 0, keepdims = True) # (1, N)
-        den = np.clip(den, np.finfo(self.X.dtype).eps, None) + c
+        # den = np.sum(P, axis = 0, keepdims = True) # (1, N)
+        # den = np.clip(den, np.finfo(self.X.dtype).eps, None) + c
 
-        self.P = np.divide(P, den)
-        self.Pt1 = np.sum(self.P, axis=0)
-        self.P1 = np.sum(self.P, axis=1)
-        self.Np = np.sum(self.P1)
-        self.PX = np.matmul(self.P, self.X)
+        # self.P = np.divide(P, den)
+        # self.Pt1 = np.sum(self.P, axis=0)
+        # self.P1 = np.sum(self.P, axis=1)
+        # self.Np = np.sum(self.P1)
+        # self.PX = np.matmul(self.P, self.X)
+        self.P, self.Pt1, self.P1, self.Np, self.PX = self._expectation(self.X, self.TY, self.sigma2, self.D, self.w, self.M, self.N)
+
+    @staticmethod
+    @njit
+    def _expectation(X, TY, sigma2, D, w, M, N):
+        """
+        Compute the expectation step of the EM algorithm.
+        """
+        # P = np.sum((X[np.newaxis, :, :] - TY[:, np.newaxis, :])**2, axis=2) # (M, N)
+        P = np.sum((np.expand_dims(X, axis=0) - np.expand_dims(TY, axis=1))**2, axis=2) # (M, N)
+        P = np.exp(-P/(2*sigma2))
+        c = (2*np.pi*sigma2)**(D/2)*w/(1. - w)*M/N
+
+        # den = np.sum(P, axis = 0, keepdims = True) # (1, N)
+        den = np.sum(P, axis = 0).reshape(1,-1) # (1, N)
+        den = np.clip(den, np.finfo(X.dtype).eps, None) + c
+
+        P = np.divide(P, den)
+        Pt1 = np.sum(P, axis=0)
+        P1 = np.sum(P, axis=1)
+        Np = np.sum(P1)
+        # PX = np.matmul(P, X)
+        PX = P @ X
+        return (P, Pt1, P1, Np, PX)
 
     def maximization(self):
         """
