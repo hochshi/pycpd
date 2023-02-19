@@ -300,6 +300,15 @@ class EMRegistration(object):
         """
         Compute the maximization step of the EM algorithm.
         """
+        st = time.time()
         self.update_transform()
+        et = time.time()
+        print(f"update_transform took {et - st} seconds.")
+        st = time.time()
         self.transform_point_cloud()
+        et = time.time()
+        print(f"transform_point_cloud took {et - st} seconds.")
+        st = time.time()
         self.update_variance()
+        et = time.time()
+        print(f"update_variance took {et - st} seconds.")

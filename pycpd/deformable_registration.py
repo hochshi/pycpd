@@ -99,14 +99,12 @@ class DeformableRegistration(EMRegistration):
         # Matlab code equivalent can be found here:
         # https://github.com/markeroon/matlab-computer-vision-routines/tree/master/third_party/CoherentPointDrift
         dP = np.diag(P1)
-        dPQ = np.matmul(dP, Q)
-        F = PX - np.matmul(dP, Y)
-
-        W = 1 / (alpha * sigma2) * (F - np.matmul(dPQ, (
-            np.linalg.solve((alpha * sigma2 * inv_S + np.matmul(Q.T, dPQ)),
-                            (np.matmul(Q.T, F))))))
-        QtW = np.matmul(Q.T, W)
-        E = E + alpha / 2 * np.trace(np.matmul(QtW.T, np.matmul(S, QtW)))
+        dPQ = dP @ Q
+        F = PX - dP @ Y
+        
+        W = 1 / (alpha * sigma2) * (F - (dPQ @ (np.linalg.solve((alpha * sigma2 * inv_S + (Q.T @ dPQ)),((Q.T @ F))))))
+        QtW = Q.T @ W
+        E = E + alpha / 2 * np.trace((QtW.T @ (S @ QtW)))
         return W, E
 
     def transform_point_cloud(self, Y=None):
@@ -206,7 +204,7 @@ class DeformableRegistration(EMRegistration):
                 
 
         """
-        return Y + np.matmul(Q, np.matmul(S, np.matmul(Q.T, W)))
+        return Y + (Q @ (S @ (Q.T @ W)))
 
     def update_variance(self):
         """
