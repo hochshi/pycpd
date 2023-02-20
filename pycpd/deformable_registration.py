@@ -1,4 +1,5 @@
 from builtins import super
+import time
 import numpy as np
 from numba import njit
 import numbers
@@ -41,10 +42,14 @@ class DeformableRegistration(EMRegistration):
         self.low_rank = low_rank
         self.num_eig = num_eig
         if self.low_rank is True:
+            print("Calculating low rank")
+            st = time.time()
             self.Q, self.S = low_rank_eigen(self.G, self.num_eig)
             self.inv_S = np.diag(1./self.S)
             self.S = np.diag(self.S)
             self.E = 0.
+            et = time.time()
+            print(f"Calculating low rank took {et - st} seconds.")
 
     def update_transform(self):
         """

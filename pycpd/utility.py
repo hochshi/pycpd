@@ -1,4 +1,5 @@
 import numpy as np
+from numba import njit
 
 
 def is_positive_semi_definite(R):
