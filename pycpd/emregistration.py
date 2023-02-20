@@ -4,7 +4,7 @@ from numba import njit
 import time
 import numbers
 from warnings import warn
-
+import pynanoflann
 
 def initialize_sigma2(X, Y):
     """
@@ -134,7 +134,7 @@ class EMRegistration(object):
 
     """
 
-    def __init__(self, X, Y, sigma2=None, max_iterations=None, tolerance=None, w=None, *args, **kwargs):
+    def __init__(self, X, Y, sigma2=None, max_iterations=None, tolerance=None, w=None, truncate_gaussian = False, *args, **kwargs):
         if type(X) is not np.ndarray or X.ndim != 2:
             raise ValueError(
                 "The target point cloud (X) must be at a 2D numpy array.")
@@ -183,6 +183,11 @@ class EMRegistration(object):
         self.P1 = np.zeros((self.M, ))
         self.PX = np.zeros((self.M, self.D))
         self.Np = 0
+        self.truncate_gaussian = truncate_gaussian
+
+        if (truncate_gaussian):
+            self.kdtree = pynanoflann.KDTree(n_neighbors=25, metric='l2', leaf_size=25, root_dist=False)
+            self.kdtree.fit(X)
 
     def register(self, callback=lambda **kwargs: None):
         """
@@ -271,16 +276,37 @@ class EMRegistration(object):
         # self.P1 = np.sum(self.P, axis=1)
         # self.Np = np.sum(self.P1)
         # self.PX = np.matmul(self.P, self.X)
-        self.P, self.Pt1, self.P1, self.Np, self.PX = self._expectation(self.X, self.TY, self.sigma2, self.D, self.w, self.M, self.N)
+        if self.truncate_gaussian:
+            self.P = self._calc_trunc_P()
+        else:
+            self.P = self._calc_P(self.X, self.TY)
+
+        self.P, self.Pt1, self.P1, self.Np, self.PX = self._expectation(self.P, self.X, self.TY, self.sigma2, self.D, self.w, self.M, self.N)
 
     @staticmethod
     @njit
-    def _expectation(X, TY, sigma2, D, w, M, N):
+    def _calc_P(X, TY):
+        return np.sum((np.expand_dims(X, axis=0) - np.expand_dims(TY, axis=1))**2, axis=2) # (M, N)
+
+    # @njit(parallel=True)
+    def _calc_trunc_P(self):
+        P = np.zeros_like(self.P)
+        for i in range(self.M):
+            dists, idxs = self.kdtree.radius_neighbors(self.Y, 9 * self.sigma2, n_jobs=8)
+            for j in range(dists.shape[0]):
+                P[i,idxs[j]] = dists[j]
+
+        return P
+
+
+    @staticmethod
+    @njit
+    def _expectation(P, X, TY, sigma2, D, w, M, N):
         """
         Compute the expectation step of the EM algorithm.
         """
         # P = np.sum((X[np.newaxis, :, :] - TY[:, np.newaxis, :])**2, axis=2) # (M, N)
-        P = np.sum((np.expand_dims(X, axis=0) - np.expand_dims(TY, axis=1))**2, axis=2) # (M, N)
+        # P = np.sum((np.expand_dims(X, axis=0) - np.expand_dims(TY, axis=1))**2, axis=2) # (M, N)
         P = np.exp(-P/(2*sigma2))
         c = (2*np.pi*sigma2)**(D/2)*w/(1. - w)*M/N
 
