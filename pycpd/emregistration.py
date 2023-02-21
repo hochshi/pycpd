@@ -4,6 +4,7 @@ from numba import njit
 import time
 import numbers
 from warnings import warn
+import pyfgt
 
 @njit
 def initialize_sigma2(X, Y):
@@ -134,7 +135,7 @@ class EMRegistration(object):
 
     """
 
-    def __init__(self, X, Y, sigma2=None, max_iterations=None, tolerance=None, w=None, *args, **kwargs):
+    def __init__(self, X, Y, sigma2=None, max_iterations=None, tolerance=None, w=None, fgt=False, *args, **kwargs):
         if type(X) is not np.ndarray or X.ndim != 2:
             raise ValueError(
                 "The target point cloud (X) must be at a 2D numpy array.")
@@ -178,11 +179,11 @@ class EMRegistration(object):
         self.iteration = 0
         self.diff = np.inf
         self.q = np.inf
-        self.P = np.zeros((self.M, self.N))
         self.Pt1 = np.zeros((self.N, ))
         self.P1 = np.zeros((self.M, ))
         self.PX = np.zeros((self.M, self.D))
         self.Np = 0
+        self.fgt = fgt
 
     def register(self, callback=lambda **kwargs: None):
         """
@@ -259,48 +260,69 @@ class EMRegistration(object):
         """
         Compute the expectation step of the EM algorithm.
         """
-        # P = np.sum((self.X[None, :, :] - self.TY[:, None, :])**2, axis=2) # (M, N)
-        # P = np.exp(-P/(2*self.sigma2))
-        # c = (2*np.pi*self.sigma2)**(self.D/2)*self.w/(1. - self.w)*self.M/self.N
-
-        # den = np.sum(P, axis = 0, keepdims = True) # (1, N)
-        # den = np.clip(den, np.finfo(self.X.dtype).eps, None) + c
-
-        # self.P = np.divide(P, den)
-        # self.Pt1 = np.sum(self.P, axis=0)
-        # self.P1 = np.sum(self.P, axis=1)
-        # self.Np = np.sum(self.P1)
-        # self.PX = np.matmul(self.P, self.X)
-        self.P = self._calc_P(self.X, self.TY)
-        self.P, self.Pt1, self.P1, self.Np, self.PX = self._expectation(self.P, self.X, self.TY, self.sigma2, self.D, self.w, self.M, self.N)
+        if not self.fgt:
+            P = self._full_P(self.X, self.TY, self.sigma2)
+        else:
+            # print("Calculating P fgt")
+            # st = time.time()
+            P = self._fgt_P(self.X, self.TY, self.sigma2)
+            # et = time.time()
+            # print(f"P fgt took {et - st} seconds.")
+            # self.Pt1, self.P1, self.Np, self.PX = self._fgt_expectation(self.X, self.TY, self.sigma2, self.D, self.w, self.M, self.N)
+        self.Pt1, self.P1, self.Np, self.PX = self._expectation(self.X, P, self.sigma2, self.D, self.w, self.M, self.N)
 
     @staticmethod
-    @njit
-    def _calc_P(X, TY):
-        return np.sum((np.expand_dims(X, axis=0) - np.expand_dims(TY, axis=1))**2, axis=2) # (M, N)
-
-    @staticmethod
-    @njit
-    def _expectation(P, X, TY, sigma2, D, w, M, N):
+    def _expectation(X, P, sigma2, D, w, M, N):
         """
         Compute the expectation step of the EM algorithm.
         """
-        # P = np.sum((X[np.newaxis, :, :] - TY[:, np.newaxis, :])**2, axis=2) # (M, N)
         # P = np.sum((np.expand_dims(X, axis=0) - np.expand_dims(TY, axis=1))**2, axis=2) # (M, N)
-        P = np.exp(-P/(2*sigma2))
+        # P = np.exp(-P/(2*sigma2))
         c = (2*np.pi*sigma2)**(D/2)*w/(1. - w)*M/N
 
-        # den = np.sum(P, axis = 0, keepdims = True) # (1, N)
         den = np.sum(P, axis = 0).reshape(1,-1) # (1, N)
         den = np.clip(den, np.finfo(X.dtype).eps, None) + c
 
-        P = np.divide(P, den)
-        Pt1 = np.sum(P, axis=0)
-        P1 = np.sum(P, axis=1)
+        normed_P = np.divide(P, den)
+        Pt1 = np.sum(normed_P, axis=0)
+        P1 = np.sum(normed_P, axis=1)
         Np = np.sum(P1)
-        # PX = np.matmul(P, X)
-        PX = P @ X
-        return (P, Pt1, P1, Np, PX)
+        PX = normed_P @ X
+        return (Pt1, P1, Np, PX)
+
+    @staticmethod
+    @njit
+    def _full_P(X, TY, sigma2):
+        """
+        Compute the probabily matrix for expectation step of the EM algorithm.
+        """
+        P = np.sum((np.expand_dims(X, axis=0) - np.expand_dims(TY, axis=1))**2, axis=2) # (M, N)
+        P = np.exp(-P/(2*sigma2))
+        return P
+
+    @staticmethod
+    def _fgt_P(X, TY, sigma2):
+        bandwidth = np.sqrt(2*sigma2)
+        return pyfgt.mat_direct_tree(X, TY, bandwidth)
+
+    @staticmethod
+    def _fgt_expectation(X, TY, sigma2, D, w, M, N):
+        bandwidth = np.sqrt(2*sigma2)
+        print("Calculating Kt1 fgt")
+        st = time.time()
+        Kt1 = pyfgt.direct_tree(TY, X, bandwidth)
+        et = time.time()
+        print(f"Kt1 fgt took {et - st} seconds.")
+        c = (2*np.pi*sigma2)**(D/2)*w/(1. - w)*M/N
+        a = np.divide(1.0, Kt1 + c)
+        Pt1 = 1 - c * a
+        P1 = pyfgt.wdirect3(TY, X, bandwidth, a)
+        Np = np.sum(P1)
+        PX0 = pyfgt.wdirect3(TY, X, bandwidth, a * X[:, 0])
+        PX1 = pyfgt.wdirect3(TY, X, bandwidth, a * X[:, 1])
+        PX2 = pyfgt.wdirect3(TY, X, bandwidth, a * X[:, 2])
+        PX = np.hstack([PX0, PX1, PX2])
+        return (Pt1, P1, Np, PX)
 
     def maximization(self):
         """

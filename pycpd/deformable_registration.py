@@ -224,13 +224,6 @@ class DeformableRegistration(EMRegistration):
         # the Gaussian kernel used for regularization.
         self.q = np.inf
 
-        # xPx = np.dot(np.transpose(self.Pt1), np.sum(
-        #     np.multiply(self.X, self.X), axis=1))
-        # yPy = np.dot(np.transpose(self.P1),  np.sum(
-        #     np.multiply(self.TY, self.TY), axis=1))
-        # trPXY = np.sum(np.multiply(self.TY, self.PX))
-
-        # self.sigma2 = (xPx - 2 * trPXY + yPy) / (self.Np * self.D)
         self.sigma2 = self._update_variance(self.Pt1, self.X, self.P1, self.TY, self.PX, self.Np, self.D)
 
         if self.sigma2 <= 0:
