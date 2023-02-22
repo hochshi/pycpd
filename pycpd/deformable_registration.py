@@ -1,7 +1,5 @@
 from builtins import super
-import time
 import numpy as np
-from numba import njit
 import numbers
 from .emregistration import EMRegistration
 from .utility import gaussian_kernel, low_rank_eigen
@@ -42,14 +40,10 @@ class DeformableRegistration(EMRegistration):
         self.low_rank = low_rank
         self.num_eig = num_eig
         if self.low_rank is True:
-            print("Calculating low rank")
-            st = time.time()
             self.Q, self.S = low_rank_eigen(self.G, self.num_eig)
             self.inv_S = np.diag(1./self.S)
             self.S = np.diag(self.S)
             self.E = 0.
-            et = time.time()
-            print(f"Calculating low rank took {et - st} seconds.")
 
     def update_transform(self):
         """
@@ -58,28 +52,14 @@ class DeformableRegistration(EMRegistration):
 
         """
         if self.low_rank is False:
-            # A = np.dot(np.diag(self.P1), self.G) + \
-            #     self.alpha * self.sigma2 * np.eye(self.M)
-            # B = self.PX - np.dot(np.diag(self.P1), self.Y)
-            # self.W = np.linalg.solve(A, B)
             self.W = self._update_transform(self.P1, self.G, self.M, self.sigma2, self.alpha, self.Y, self.PX)
 
         elif self.low_rank is True:
             # Matlab code equivalent can be found here:
             # https://github.com/markeroon/matlab-computer-vision-routines/tree/master/third_party/CoherentPointDrift
-            # dP = np.diag(self.P1)
-            # dPQ = np.matmul(dP, self.Q)
-            # F = self.PX - np.matmul(dP, self.Y)
-
-            # self.W = 1 / (self.alpha * self.sigma2) * (F - np.matmul(dPQ, (
-            #     np.linalg.solve((self.alpha * self.sigma2 * self.inv_S + np.matmul(self.Q.T, dPQ)),
-            #                     (np.matmul(self.Q.T, F))))))
-            # QtW = np.matmul(self.Q.T, self.W)
-            # self.E = self.E + self.alpha / 2 * np.trace(np.matmul(QtW.T, np.matmul(self.S, QtW)))
             self.W, self.E = self._update_transform_low(self.P1, self.sigma2, self.alpha, self.Y, self.PX, self.Q, self.E, self.inv_S, self.S)
 
     @staticmethod
-    @njit
     def _update_transform(P1, G, M, sigma2, alpha, Y, PX):
         """
         Calculate a new estimate of the deformable transformation.
@@ -94,7 +74,6 @@ class DeformableRegistration(EMRegistration):
 
 
     @staticmethod
-    @njit
     def _update_transform_low(P1, sigma2, alpha, Y, PX, Q, E, inv_S, S):
         """
         Calculate a new estimate of the deformable transformation.
@@ -131,21 +110,16 @@ class DeformableRegistration(EMRegistration):
 
         """
         if Y is not None:
-            # G = gaussian_kernel(X=Y, beta=self.beta, Y=self.Y)
-            # return Y + np.dot(G, self.W)
             return self._transform_point_cloud(Y, self.beta, self.Y, self.W)
         else:
             if self.low_rank is False:
-                # self.TY = self.Y + np.dot(self.G, self.W)
                 self.TY = self._transform_y(self.Y, self.G, self.W)
 
             elif self.low_rank is True:
-                # self.TY = self.Y + np.matmul(self.Q, np.matmul(self.S, np.matmul(self.Q.T, self.W)))
                 self.TY = self._transform_y_low(self.Y, self.Q, self.S, self.W)
                 return
 
     @staticmethod
-    @njit
     def _transform_point_cloud(X, beta, Y, W):
         """
         Update a point cloud using the new estimate of the deformable transformation.
@@ -168,7 +142,6 @@ class DeformableRegistration(EMRegistration):
         return Y + np.dot(G, W)
 
     @staticmethod
-    @njit
     def _transform_y(Y, G, W):
         """
         Update a point cloud using the new estimate of the deformable transformation.
@@ -190,7 +163,6 @@ class DeformableRegistration(EMRegistration):
         return Y + np.dot(G, W)
 
     @staticmethod
-    @njit
     def _transform_y_low(Y, Q, S, W):
         """
         Update a point cloud using the new estimate of the deformable transformation.
@@ -234,7 +206,6 @@ class DeformableRegistration(EMRegistration):
         self.diff = np.abs(self.sigma2 - qprev)
 
     @staticmethod
-    @njit
     def _update_variance(Pt1, X, P1, TY, PX, Np, D):
         """
         Update the variance of the mixture model using the new estimate of the deformable transformation.

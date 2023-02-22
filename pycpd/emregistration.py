@@ -1,12 +1,9 @@
 from __future__ import division
 import numpy as np
-from numba import njit
-import time
 import numbers
 from warnings import warn
 import pyfgt
 
-@njit
 def initialize_sigma2(X, Y):
     """
     Initialize the variance (sigma2).
@@ -245,15 +242,8 @@ class EMRegistration(object):
         """
         Perform one iteration of the EM algorithm.
         """
-        st = time.time()
         self.expectation()
-        et = time.time()
-        print(f"Expectation took {et - st} seconds.")
-        st = time.time()
         self.maximization()
-        et = time.time()
-        print(f"maximization took {et - st} seconds.")
-        st = time.time()
         self.iteration += 1
 
     def expectation(self):
@@ -263,12 +253,7 @@ class EMRegistration(object):
         if not self.fgt:
             P = self._full_P(self.X, self.TY, self.sigma2)
         else:
-            # print("Calculating P fgt")
-            # st = time.time()
             P = self._fgt_P(self.X, self.TY, self.sigma2)
-            # et = time.time()
-            # print(f"P fgt took {et - st} seconds.")
-            # self.Pt1, self.P1, self.Np, self.PX = self._fgt_expectation(self.X, self.TY, self.sigma2, self.D, self.w, self.M, self.N)
         self.Pt1, self.P1, self.Np, self.PX = self._expectation(self.X, P, self.sigma2, self.D, self.w, self.M, self.N)
 
     @staticmethod
@@ -276,8 +261,6 @@ class EMRegistration(object):
         """
         Compute the expectation step of the EM algorithm.
         """
-        # P = np.sum((np.expand_dims(X, axis=0) - np.expand_dims(TY, axis=1))**2, axis=2) # (M, N)
-        # P = np.exp(-P/(2*sigma2))
         c = (2*np.pi*sigma2)**(D/2)*w/(1. - w)*M/N
 
         den = np.sum(P, axis = 0).reshape(1,-1) # (1, N)
@@ -291,7 +274,6 @@ class EMRegistration(object):
         return (Pt1, P1, Np, PX)
 
     @staticmethod
-    @njit
     def _full_P(X, TY, sigma2):
         """
         Compute the probabily matrix for expectation step of the EM algorithm.
@@ -308,11 +290,7 @@ class EMRegistration(object):
     @staticmethod
     def _fgt_expectation(X, TY, sigma2, D, w, M, N):
         bandwidth = np.sqrt(2*sigma2)
-        print("Calculating Kt1 fgt")
-        st = time.time()
         Kt1 = pyfgt.direct_tree(TY, X, bandwidth)
-        et = time.time()
-        print(f"Kt1 fgt took {et - st} seconds.")
         c = (2*np.pi*sigma2)**(D/2)*w/(1. - w)*M/N
         a = np.divide(1.0, Kt1 + c)
         Pt1 = 1 - c * a
@@ -328,15 +306,6 @@ class EMRegistration(object):
         """
         Compute the maximization step of the EM algorithm.
         """
-        st = time.time()
         self.update_transform()
-        et = time.time()
-        print(f"update_transform took {et - st} seconds.")
-        st = time.time()
         self.transform_point_cloud()
-        et = time.time()
-        print(f"transform_point_cloud took {et - st} seconds.")
-        st = time.time()
         self.update_variance()
-        et = time.time()
-        print(f"update_variance took {et - st} seconds.")
